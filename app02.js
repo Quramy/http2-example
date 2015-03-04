@@ -15,13 +15,35 @@ function onRequest(request, response) {
   var parsed = url.parse(request.url);
   var filename = path.join(__dirname, staticDir, parsed.pathname);
   var matched = parsed.query && parsed.query.match(/seq=([^=\&\?]+)/), seq = matched && matched[1];
-  console.log(request.url, seq);
+  console.log(new Date(), request.url);
+
+  var matched;
 
 
   // Serving server.js from cache. Useful for microbenchmarks.
   if (request.url === cachedUrl) {
     response.end(cachedFile);
   }
+
+  // API
+  else if (request.url === '/task' || request.url === '/task/') {
+    var id = (~~(Math.random() * 0xFFFFFF)).toString(16);
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    if (response.push) {
+      var push = response.push('/task/' + id + '/result');
+      setTimeout(function () {
+        console.log(new Date(), 'Task done: ', id);
+        push.writeHead(200, {'Content-Type': 'application/json'});
+        push.end(JSON.stringify({id: id, result: 'RESULT!'}));
+      }, 2000);
+    }
+    response.end(JSON.stringify({status: 'OK', code: 0, id: id}));
+  } else if(matched=request.url.match(/task\/([a-f0-9]+)\/result/)) {
+    console.log(new Date(), 'Task done: ', matched[1]);
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.end(JSON.stringify({id: matched[1], result: 'RESULT!'}));
+  }
+
 
   // Reading file from disk if it exists and is safe.
   else if ((filename.indexOf(__dirname) === 0) && fs.existsSync(filename) && fs.statSync(filename).isFile()) {
@@ -35,14 +57,22 @@ function onRequest(request, response) {
     }
 
     /*
-    if(!seq || parseInt(seq) % 3 !== 0 ) {
-      fs.createReadStream(filename).pipe(response);
-    } else {
+    if (response.push && request.url === '/pushTest.html') {
+      var push = response.push('/assets/images/http2.png');
       setTimeout(function () {
-        fs.createReadStream(filename).pipe(response);
-      }, 500);
+        console.log(new Date(), 'Push done');
+        push.writeHead(200);
+        fs.createReadStream(path.join(__dirname, staticDir, 'assets/images/ok.png')).pipe(push);
+      }, 800);
     }
-   */
+       if(!seq || parseInt(seq) % 3 !== 0 ) {
+       fs.createReadStream(filename).pipe(response);
+       } else {
+       setTimeout(function () {
+       fs.createReadStream(filename).pipe(response);
+       }, 500);
+       }
+       */
 
     if(parsed.pathname.match('ng.png')){
       setTimeout(function () {
@@ -67,7 +97,8 @@ var log = require('http2/test/util').createLogger('server');
 var server;
 if (process.env.HTTP2_PLAIN) {
   server = http2.raw.createServer({
-    log: log
+    log: log,
+    plain: true
   }, onRequest);
 } else {
   server = http2.createServer({
